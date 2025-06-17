@@ -34,7 +34,7 @@ HTML_FORM = """
 </html>
 """
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def get_form():
     return HTML_FORM
 
