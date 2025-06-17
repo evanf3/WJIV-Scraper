@@ -110,11 +110,12 @@ def clean_speakcat_fileobj(fileobj) -> io.BytesIO:
     df = pd.read_excel(fileobj)
     df_str = df.astype(str)
 
-    # Filter rows NOT containing "test" in any column (case insensitive)
-    contains_test = df_str.applymap(lambda x: "test" in x.lower())
-    rows_to_keep = ~contains_test.any(axis=1)
-    df = df[rows_to_keep]
-
+    # Filter rows NOT containing "test" in any email column (case insensitive)
+    email_cols = [col for col in df.columns if "email" in col.lower()]
+    if email_cols:
+        mask = df[email_cols].apply(lambda col: col.astype(str).str.lower().str.contains("test", na=False)).any(axis=1)
+        df = df[~mask]
+      
     df['submit_timestamp'] = pd.to_datetime(df['submit_timestamp'])
     df.sort_values(by='submit_timestamp', ascending=False, inplace=True)
 
