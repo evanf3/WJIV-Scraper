@@ -18,18 +18,38 @@ HTML_FORM = """
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Woodcock Johnson IV Report Scraper</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background: #f0f2f5;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .form-container {
+      max-width: 600px;
+      margin: 80px auto;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      font-size: 1.8rem;
+      color: #333;
+    }
+  </style>
 </head>
 <body>
-<div class="container" style="max-width:600px; margin-top:50px; background:#fff; padding:30px; border-radius:10px;">
-  <h1 class="mb-4 text-center">Upload Woodcock Johnson IV Reports</h1>
-  <form method="post" enctype="multipart/form-data">
-    <div class="mb-3">
-      <label for="pdfs" class="form-label">Select PDF files (multiple allowed)</label>
-      <input class="form-control" type="file" id="pdfs" name="pdfs" multiple accept=".pdf" required />
+  <div class="container">
+    <div class="form-container">
+      <h1 class="mb-4 text-center">Upload Woodcock Johnson IV Reports</h1>
+      <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label for="pdfs" class="form-label">Select PDF files (multiple allowed)</label>
+          <input class="form-control" type="file" id="pdfs" name="pdfs" multiple accept=".pdf" required />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Process PDFs</button>
+      </form>
     </div>
-    <button type="submit" class="btn btn-primary w-100">Process PDFs</button>
-  </form>
-</div>
+  </div>
 </body>
 </html>
 """
