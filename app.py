@@ -1,14 +1,15 @@
-from fastapi import FastAPI, File, UploadFile, Form, Request
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
 import polars as pl
 import tempfile
 import os
-from analyze_pdf import ReportScraper
 import io
+import pandas as pd
+from datetime import datetime, timedelta
+import regex as re
+from analyze_pdf import ReportScraper  # Your existing WJIV PDF scraper
 
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")  # you can skip and do inline if you want
 
 HTML_FORM = """
 <!DOCTYPE html>
@@ -16,50 +17,48 @@ HTML_FORM = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Woodcock Johnson IV Report Scraper</title>
+  <title>TMW Tools</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <style>
-    body {
-      background: #f0f2f5;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .form-container {
-      max-width: 600px;
-      margin: 80px auto;
-      background: white;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-    }
-    h1 {
-      font-size: 1.8rem;
-      color: #333;
-    }
-  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="form-container">
-      <h1 class="mb-4 text-center">Upload Woodcock Johnson IV Reports</h1>
-      <form method="post" enctype="multipart/form-data">
-        <div class="mb-3">
-          <label for="pdfs" class="form-label">Select PDF files (multiple allowed)</label>
-          <input class="form-control" type="file" id="pdfs" name="pdfs" multiple accept=".pdf" required />
-        </div>
-        <button type="submit" class="btn btn-primary w-100">Process PDFs</button>
-      </form>
-    </div>
+<div class="container" style="max-width:700px; margin-top:50px;">
+  <h1 class="mb-4 text-center">PDF Report Scraper</h1>
+
+  <!-- WJIV Form -->
+  <div class="mb-5 p-4 border rounded bg-light">
+    <h3 class="mb-3">Woodcock Johnson IV Assessment Scraper</h3>
+    <form method="post" enctype="multipart/form-data" action="/process_wjiv">
+      <div class="mb-3">
+        <label for="wjiv_pdfs" class="form-label">Select WJIV PDF files</label>
+        <input class="form-control" type="file" id="wjiv_pdfs" name="pdfs" multiple accept=".pdf" required />
+      </div>
+      <button type="submit" class="btn btn-primary">Process WJIV</button>
+    </form>
   </div>
+
+  <!-- SpeakCAT Form -->
+  <div class="p-4 border rounded bg-light">
+    <h3 class="mb-3">SpeakCAT</h3>
+    <form method="post" enctype="multipart/form-data" action="/process_speakcat_excel">
+      <div class="mb-3">
+        <label for="speakcat_excel" class="form-label">Upload SpeakCAT Excel file</label>
+        <input class="form-control" type="file" id="speakcat_excel" name="excel" accept=".xlsx,.xls" required />
+      </div>
+      <button type="submit" class="btn btn-success">Process SpeakCAT</button>
+    </form>
+  </div>
+</div>
 </body>
 </html>
 """
 
-@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 async def get_form():
     return HTML_FORM
 
-@app.post("/", response_class=StreamingResponse)
-async def upload_pdfs(pdfs: list[UploadFile] = File(...)):
+
+@app.post("/process_wjiv", response_class=StreamingResponse)
+async def process_wjiv_pdfs(pdfs: list[UploadFile] = File(...)):
     english_files = []
     spanish_files = []
 
@@ -84,14 +83,11 @@ async def upload_pdfs(pdfs: list[UploadFile] = File(...)):
 
         if not en_df.is_empty() and not sp_df.is_empty():
             df = en_df.join(sp_df, on="ID", how="full", coalesce=True)
-
             right_cols = [col for col in df.columns if col.endswith("_right")]
-            replacements = [
+            df = df.with_columns([
                 pl.coalesce([pl.col(col.replace("_right", "")), pl.col(col)]).alias(col.replace("_right", ""))
                 for col in right_cols
-            ]
-            df = df.with_columns(replacements)
-            df = df.drop(right_cols)
+            ]).drop(right_cols)
         elif not en_df.is_empty():
             df = en_df
         elif not sp_df.is_empty():
@@ -102,12 +98,59 @@ async def upload_pdfs(pdfs: list[UploadFile] = File(...)):
         if not df.is_empty():
             df = df.select(pl.col("ID"), pl.all().exclude("ID"))
             df = df.unique().sort("ID")
-
             csv_bytes = df.write_csv().encode("utf-8")
             return StreamingResponse(io.BytesIO(csv_bytes), media_type="text/csv", headers={
-                "Content-Disposition": 'attachment; filename="output.csv"'
+                "Content-Disposition": 'attachment; filename="wjiv_output.csv"'
             })
 
-    return HTML_FORM  # fallback - if no data
+    return HTML_FORM
 
-# To run: uvicorn app:app --reload
+
+def clean_speakcat_fileobj(fileobj) -> io.BytesIO:
+    df = pd.read_excel(fileobj)
+    df_str = df.astype(str)
+
+    # Filter rows NOT containing "test" in any column (case insensitive)
+    contains_test = df_str.applymap(lambda x: "test" in x.lower())
+    rows_to_keep = ~contains_test.any(axis=1)
+    df = df[rows_to_keep]
+
+    df['submit_timestamp'] = pd.to_datetime(df['submit_timestamp'])
+    df.sort_values(by='submit_timestamp', ascending=False, inplace=True)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        now = datetime.now()
+        week_prior = now - timedelta(weeks=1)
+        df_last_week = df[df['submit_timestamp'] > week_prior]
+
+        scores_mean = pd.to_numeric(df_last_week['overall_total_score'], errors='coerce').mean()
+        avg_score_row = {'Organization': "Average Score", 'overall_total_score': scores_mean}
+        study_df = pd.concat([df_last_week, pd.DataFrame([avg_score_row])], ignore_index=True)
+
+        df_last_week.to_excel(writer, sheet_name='Last Week', index=False)
+
+        for study_name in df["StudyID"].unique().tolist():
+            study_df = df[df["StudyID"] == study_name]
+            scores_mean = pd.to_numeric(study_df['overall_total_score'], errors='coerce').mean()
+            avg_score_row = {'Organization': "Average Score", 'overall_total_score': scores_mean}
+            study_df = pd.concat([study_df, pd.DataFrame([avg_score_row])], ignore_index=True)
+
+            sheet_name = re.sub(r'[\[\]\:\*\?\/\\]', '', study_name)[:31]
+            study_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    output.seek(0)
+    return output
+
+
+@app.post("/process_speakcat_excel", response_class=StreamingResponse)
+async def process_speakcat_excel(excel: UploadFile = File(...)):
+    contents = await excel.read()
+    fileobj = io.BytesIO(contents)
+    output = clean_speakcat_fileobj(fileobj)
+
+    return StreamingResponse(
+        output,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename="SpeakCAT_Cleaned.xlsx"'}
+    )
