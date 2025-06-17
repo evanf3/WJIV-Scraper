@@ -2,3 +2,6 @@ fastapi
 uvicorn
 polars
 pdfplumber
+jinja2
+multi
+python-multipart
