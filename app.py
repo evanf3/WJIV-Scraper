@@ -36,15 +36,15 @@ HTML_FORM = """
     </form>
   </div>
 
-  <!-- SpeakCAT Form -->
+  <!-- SPEAKCAT Form -->
   <div class="p-4 border rounded bg-light">
-    <h3 class="mb-3">SpeakCAT</h3>
+    <h3 class="mb-3">SPEAKCAT</h3>
     <form method="post" enctype="multipart/form-data" action="/process_speakcat_excel">
       <div class="mb-3">
-        <label for="speakcat_excel" class="form-label">Upload SpeakCAT Excel file</label>
+        <label for="speakcat_excel" class="form-label">Upload SPEAKCAT Excel file</label>
         <input class="form-control" type="file" id="speakcat_excel" name="excel" accept=".xlsx,.xls" required />
       </div>
-      <button type="submit" class="btn btn-success">Process SpeakCAT</button>
+      <button type="submit" class="btn btn-success">Process SPEAKCAT</button>
     </form>
   </div>
 </div>
@@ -110,10 +110,14 @@ def clean_speakcat_fileobj(fileobj) -> io.BytesIO:
     df = pd.read_excel(fileobj)
     df_str = df.astype(str)
 
-    # Filter rows NOT containing "test" in any email column (case insensitive)
-    email_cols = [col for col in df.columns if "email" in col.lower()]
-    if email_cols:
-        mask = df[email_cols].apply(lambda col: col.astype(str).str.lower().str.contains("test", na=False)).any(axis=1)
+    # Filter rows NOT containing "test" in any email/ID column 
+    cols_to_check = [col for col in df.columns if 
+                        ("email" in col.lower()) or 
+                        ("ID" in col) or
+                        ("identifier" in col)
+                    ]
+    if cols_to_check:
+        mask = df[cols_to_check].apply(lambda col: col.astype(str).str.lower().str.contains("test", na=False)).any(axis=1)
         df = df[~mask]
       
     df['submit_timestamp'] = pd.to_datetime(df['submit_timestamp'])
@@ -153,5 +157,5 @@ async def process_speakcat_excel(excel: UploadFile = File(...)):
     return StreamingResponse(
         output,
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': 'attachment; filename="SpeakCAT_Cleaned.xlsx"'}
+        headers={'Content-Disposition': 'attachment; filename="SPEAKCAT_Results_Cleaned.xlsx"'}
     )
