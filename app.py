@@ -7,7 +7,7 @@ import io
 import pandas as pd
 from datetime import datetime, timedelta
 import regex as re
-from analyze_pdf import ReportScraper  # Your existing WJIV PDF scraper
+from analyze_pdf import ReportScraper
 
 app = FastAPI()
 
